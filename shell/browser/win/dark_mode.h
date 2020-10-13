@@ -19,15 +19,7 @@ namespace electron {
 
 namespace win {
 
-void SetDarkModeForApp(ui::NativeTheme::ThemeSource theme_source);
 void SetDarkModeForWindow(HWND hWnd, ui::NativeTheme::ThemeSource theme_source);
-
-bool IsDarkModeEnabled();
-bool IsDarkModeSupported();
-void HandleSettingChange(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-void HandleWindowThemeChanged(HWND hWnd);
-bool AllowDarkModeForWindow(HWND hWnd, bool allow);
-void AllowDarkModeForApp(bool allow);
 
 }  // namespace win
 
