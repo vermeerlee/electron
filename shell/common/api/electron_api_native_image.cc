@@ -103,8 +103,6 @@ base::win::ScopedHICON ReadICOFromPath(int size, const base::FilePath& path) {
 }
 #endif
 
-void Noop(char*, void*) {}
-
 }  // namespace
 
 NativeImage::NativeImage(v8::Isolate* isolate, const gfx::Image& image)
@@ -224,6 +222,10 @@ std::string NativeImage::ToDataURL(gin::Arguments* args) {
       image_.AsImageSkia().GetRepresentation(scale_factor).GetBitmap());
 }
 
+void SkUnref(char* data, void* hint) {
+  reinterpret_cast<SkRefCnt*>(hint)->unref();
+}
+
 v8::Local<v8::Value> NativeImage::GetBitmap(gin::Arguments* args) {
   float scale_factor = GetScaleFactorFromOptions(args);
 
@@ -232,9 +234,10 @@ v8::Local<v8::Value> NativeImage::GetBitmap(gin::Arguments* args) {
   SkPixelRef* ref = bitmap.pixelRef();
   if (!ref)
     return node::Buffer::New(args->isolate(), 0).ToLocalChecked();
+  ref->ref();
   return node::Buffer::New(args->isolate(),
                            reinterpret_cast<char*>(ref->pixels()),
-                           bitmap.computeByteSize(), &Noop, nullptr)
+                           bitmap.computeByteSize(), &SkUnref, ref)
       .ToLocalChecked();
 }
 
@@ -267,7 +270,11 @@ gfx::Size NativeImage::GetSize(const base::Optional<float> scale_factor) {
 
 std::vector<float> NativeImage::GetScaleFactors() {
   gfx::ImageSkia image_skia = image_.AsImageSkia();
-  return image_skia.GetSupportedScales();
+  std::vector<float> scale_factors;
+  for (const auto& rep : image_skia.image_reps()) {
+    scale_factors.push_back(rep.scale());
+  }
+  return scale_factors;
 }
 
 float NativeImage::GetAspectRatio(const base::Optional<float> scale_factor) {
@@ -386,18 +393,20 @@ gin::Handle<NativeImage> NativeImage::Create(v8::Isolate* isolate,
 gin::Handle<NativeImage> NativeImage::CreateFromPNG(v8::Isolate* isolate,
                                                     const char* buffer,
                                                     size_t length) {
-  gfx::Image image = gfx::Image::CreateFrom1xPNGBytes(
-      reinterpret_cast<const unsigned char*>(buffer), length);
-  return Create(isolate, image);
+  gfx::ImageSkia image_skia;
+  electron::util::AddImageSkiaRepFromPNG(
+      &image_skia, reinterpret_cast<const unsigned char*>(buffer), length, 1.0);
+  return Create(isolate, gfx::Image(image_skia));
 }
 
 // static
 gin::Handle<NativeImage> NativeImage::CreateFromJPEG(v8::Isolate* isolate,
                                                      const char* buffer,
                                                      size_t length) {
-  gfx::Image image = gfx::ImageFrom1xJPEGEncodedData(
-      reinterpret_cast<const unsigned char*>(buffer), length);
-  return Create(isolate, image);
+  gfx::ImageSkia image_skia;
+  electron::util::AddImageSkiaRepFromJPEG(
+      &image_skia, reinterpret_cast<const unsigned char*>(buffer), length, 1.0);
+  return Create(isolate, gfx::Image(image_skia));
 }
 
 // static
