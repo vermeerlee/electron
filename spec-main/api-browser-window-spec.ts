@@ -1288,7 +1288,7 @@ describe('BrowserWindow module', () => {
 
     it('preserves transparency', async () => {
       const w = new BrowserWindow({ show: false, transparent: true });
-      w.loadURL('about:blank');
+      w.loadFile(path.join(fixtures, 'pages', 'theme-color.html'));
       await emittedOnce(w, 'ready-to-show');
       w.show();
 
@@ -1578,6 +1578,30 @@ describe('BrowserWindow module', () => {
       } finally {
         contents.destroy();
       }
+    });
+
+    it('returns the correct window for a BrowserView webcontents', async () => {
+      const w = new BrowserWindow({ show: false });
+      const bv = new BrowserView();
+      w.setBrowserView(bv);
+      defer(() => {
+        w.removeBrowserView(bv);
+        (bv.webContents as any).destroy();
+      });
+      await bv.webContents.loadURL('about:blank');
+      expect(BrowserWindow.fromWebContents(bv.webContents)!.id).to.equal(w.id);
+    });
+
+    it('returns the correct window for a WebView webcontents', async () => {
+      const w = new BrowserWindow({ show: false, webPreferences: { webviewTag: true } });
+      w.loadURL('data:text/html,<webview src="data:text/html,hi"></webview>');
+      // NOTE(nornagon): Waiting for 'did-attach-webview' is a workaround for
+      // https://github.com/electron/electron/issues/25413, and is not integral
+      // to the test.
+      const p = emittedOnce(w.webContents, 'did-attach-webview');
+      const [, webviewContents] = await emittedOnce(app, 'web-contents-created');
+      expect(BrowserWindow.fromWebContents(webviewContents)!.id).to.equal(w.id);
+      await p;
     });
   });
 
@@ -1889,8 +1913,8 @@ describe('BrowserWindow module', () => {
         const [, test] = await emittedOnce(ipcMain, 'answer');
         expect(test).to.eql('preload');
       });
-      it('can successfully delete the Buffer global', async () => {
-        const preload = path.join(__dirname, 'fixtures', 'module', 'delete-buffer.js');
+      ifit(features.isRemoteModuleEnabled())('can successfully delete the Buffer global', async () => {
+        const preload = path.join(__dirname, 'fixtures', 'remote', 'delete-buffer.js');
         const w = new BrowserWindow({
           show: false,
           webPreferences: {
@@ -2015,7 +2039,7 @@ describe('BrowserWindow module', () => {
     ifdescribe(features.isRemoteModuleEnabled())('"enableRemoteModule" option', () => {
       const generateSpecs = (description: string, sandbox: boolean) => {
         describe(description, () => {
-          const preload = path.join(__dirname, 'fixtures', 'module', 'preload-remote.js');
+          const preload = path.join(__dirname, 'fixtures', 'remote', 'preload-remote.js');
 
           it('disables the remote module by default', async () => {
             const w = new BrowserWindow({
@@ -3946,6 +3970,22 @@ describe('BrowserWindow module', () => {
     });
 
     ifdescribe(process.platform === 'darwin')('fullscreen state', () => {
+      it('should not cause a crash if called when exiting fullscreen', async () => {
+        const w = new BrowserWindow();
+
+        const enterFullScreen = emittedOnce(w, 'enter-full-screen');
+        w.setFullScreen(true);
+        await enterFullScreen;
+
+        await delay();
+
+        const leaveFullScreen = emittedOnce(w, 'leave-full-screen');
+        w.setFullScreen(false);
+        await leaveFullScreen;
+
+        w.close();
+      });
+
       it('can be changed with setFullScreen method', async () => {
         const w = new BrowserWindow();
         const enterFullScreen = emittedOnce(w, 'enter-full-screen');
