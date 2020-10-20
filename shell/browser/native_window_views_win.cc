@@ -8,6 +8,7 @@
 #include <shellapi.h>
 
 #include "content/public/browser/browser_accessibility_state.h"
+#include "electron/buildflags/buildflags.h"
 #include "shell/browser/browser.h"
 #include "shell/browser/ui/views/root_view.h"
 #include "shell/common/electron_constants.h"
