@@ -203,6 +203,19 @@ bool SSLProtocolVersionFromString(const std::string& version_str,
 }
 
 template <>
+struct Converter<uint16_t> {
+  static bool FromV8(v8::Isolate* isolate,
+                     v8::Local<v8::Value> val,
+                     uint16_t* out) {
+    auto maybe = val->IntegerValue(isolate->GetCurrentContext());
+    if (maybe.IsNothing())
+      return false;
+    *out = maybe.FromJust();
+    return true;
+  }
+};
+
+template <>
 struct Converter<network::mojom::SSLConfigPtr> {
   static bool FromV8(v8::Isolate* isolate,
                      v8::Local<v8::Value> val,
@@ -224,8 +237,14 @@ struct Converter<network::mojom::SSLConfigPtr> {
         return false;
     }
 
-    // TODO(nornagon): also support client_cert_pooling_policy and
-    // disabled_cipher_suites. Maybe other SSLConfig properties too?
+    if (options.Has("disabledCipherSuites") &&
+        !options.Get("disabledCipherSuites", &(*out)->disabled_cipher_suites)) {
+      return false;
+    }
+    std::sort((*out)->disabled_cipher_suites.begin(),
+              (*out)->disabled_cipher_suites.end());
+
+    // TODO(nornagon): also support other SSLConfig properties?
     return true;
   }
 };
@@ -938,6 +957,9 @@ void Session::SetSpellCheckerLanguages(
   }
   browser_context_->prefs()->Set(spellcheck::prefs::kSpellCheckDictionaries,
                                  language_codes);
+  // Enable spellcheck if > 0 languages, disable if no languages set
+  browser_context_->prefs()->SetBoolean(spellcheck::prefs::kSpellCheckEnable,
+                                        !languages.empty());
 }
 
 void SetSpellCheckerDictionaryDownloadURL(gin_helper::ErrorThrower thrower,
@@ -959,9 +981,11 @@ v8::Local<v8::Promise> Session::ListWordsInSpellCheckerDictionary() {
   SpellcheckService* spellcheck =
       SpellcheckServiceFactory::GetForContext(browser_context_);
 
-  if (!spellcheck)
+  if (!spellcheck) {
     promise.RejectWithErrorMessage(
         "Spellcheck in unexpected state: failed to load custom dictionary.");
+    return handle;
+  }
 
   if (spellcheck->GetCustomDictionary()->IsLoaded()) {
     promise.Resolve(spellcheck->GetCustomDictionary()->GetWords());
